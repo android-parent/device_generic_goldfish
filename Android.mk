@@ -26,6 +26,6 @@ ifeq ($(BUILD_QEMU_IMAGES),true)
 
   $(call dist-for-goals, dist_files, $(INSTALLED_EMULATOR_INFO_TXT_TARGET))
 
+endif
   subdir_makefiles=$(call first-makefiles-under,$(LOCAL_PATH))
   $(foreach mk,$(subdir_makefiles),$(info including $(mk) ...)$(eval include $(mk)))
-endif
