@@ -41,6 +41,9 @@
 #                                  | ***********  ***********
 #
 
+wifi_mac_prefix=`getprop net.wifi_mac_prefix 5555`
+/vendor/bin/mac80211_create_radios 2 $wifi_mac_prefix || exit 1
+
 NAMESPACE="router"
 rm -rf /data/vendor/var/run/netns/${NAMESPACE}
 rm -rf /data/vendor/var/run/netns/${NAMESPACE}.pid
@@ -71,14 +74,20 @@ PID=$(cat /data/vendor/var/run/netns/${NAMESPACE}.pid)
 
 # Move the WiFi monitor interface to the other namespace and bring it up. This
 # is what we use for injecting WiFi frames from the outside world.
-/system/bin/ip link set hwsim0 netns ${PID}
-execns ${NAMESPACE} /system/bin/ip link set hwsim0 up
+#/system/bin/ip link set hwsim0 netns ${PID}
+#execns ${NAMESPACE} /system/bin/ip link set hwsim0 up
 
 # Start the network manager as soon as possible after the namespace is available.
 # This ensures that anything that follows is properly managed and monitored.
 setprop ctl.start netmgr
 
+eth0_addr=`/system/bin/ip a show dev eth0 | /system/bin/grep 'inet ' | /system/bin/awk '{print $2,$3,$4}'`
+eth0_gw=`/system/bin/ip r get 8.8.8.8 | /system/bin/head -n 1 | /system/bin/awk '{print $3}'`
 /system/bin/ip link set eth0 netns ${PID}
+execns ${NAMESPACE} /system/bin/ip link set eth0 up
+execns ${NAMESPACE} /system/bin/ip a add ${eth0_addr} dev eth0
+execns ${NAMESPACE} /system/bin/ip r add default via ${eth0_gw} dev eth0
+
 /system/bin/ip link add radio0 type veth peer name radio0-peer
 /system/bin/ip link set radio0-peer netns ${PID}
 # Enable privacy addresses for radio0, this is done by the framework for wlan0
@@ -88,7 +97,7 @@ execns ${NAMESPACE} /system/bin/ip addr add 192.168.200.1/24 dev radio0-peer
 execns ${NAMESPACE} sysctl -wq net.ipv6.conf.all.forwarding=1
 execns ${NAMESPACE} /system/bin/ip link set radio0-peer up
 # Start the dhcp client for eth0 to acquire an address
-setprop ctl.start dhcpclient_rtr
+# setprop ctl.start dhcpclient_rtr
 # Create iptables entries. -w will cause an indefinite wait for the exclusive
 # lock. Without this flag iptables can sporadically fail if something else is
 # modifying the iptables at the same time. -W indicates the number of micro-
@@ -96,7 +105,7 @@ setprop ctl.start dhcpclient_rtr
 # time. Keep this short so we don't slow down startup too much.
 execns ${NAMESPACE} /system/bin/iptables -w -W 50000 -t nat -A POSTROUTING -s 192.168.232.0/21 -o eth0 -j MASQUERADE
 execns ${NAMESPACE} /system/bin/iptables -w -W 50000 -t nat -A POSTROUTING -s 192.168.200.0/24 -o eth0 -j MASQUERADE
-/vendor/bin/iw phy phy1 set netns $PID
+/vendor/bin/iw phy phy`/vendor/bin/iw wlan1 info | /system/bin/grep wiphy | /system/bin/awk '{print $2}'` set netns $PID # HACKED
 
 execns ${NAMESPACE} /system/bin/ip addr add 192.168.232.1/21 dev wlan1
 execns ${NAMESPACE} /system/bin/ip link set wlan1 mtu 1400
